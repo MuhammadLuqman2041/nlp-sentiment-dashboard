@@ -475,7 +475,7 @@ elif page == "Tentang Proyek":
             'Keterangan': ['Mata Kuliah','Institusi','Tahun','Dataset','Algoritma','Fitur'],
             'Detail': ['Pemrosesan Bahasa Alami (NLP)',
                        'Universitas Muhammadiyah Malang',
-                       '2025',
+                       '2026',
                        'Amazon Fine Food Reviews (Kaggle)',
                        'Decision Tree Classifier',
                        'Bag of Words, N-Gram, TF-IDF']
