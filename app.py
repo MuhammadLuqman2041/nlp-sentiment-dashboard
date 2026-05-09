@@ -137,7 +137,7 @@ if page == "Overview":
     st.markdown("""
     <div class="page-header">
         <h1>Sentiment Classification Dashboard</h1>
-        <p>Amazon Fine Food Reviews — Pemrosesan Bahasa Alami | Universitas Muhammadiyah Malang 2025</p>
+        <p>Amazon Fine Food Reviews — Pemrosesan Bahasa Alami | Universitas Muhammadiyah Malang 2026</p>
     </div>""", unsafe_allow_html=True)
 
     st.markdown("""<div class="metric-row">
