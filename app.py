@@ -492,10 +492,10 @@ elif page == "Tentang Proyek":
     with col2:
         st.markdown('<div class="section-title">Referensi</div>', unsafe_allow_html=True)
         st.markdown("""
-        - Amazon Fine Food Reviews — [Kaggle](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews)
+        - Amazon Fine Food Reviews: [Kaggle](https://www.kaggle.com/datasets/snap/amazon-fine-food-reviews)
         - Bird, S., et al. (2009). *Natural Language Processing with Python*. O'Reilly Media.
         - Pedregosa, F., et al. (2011). Scikit-learn: Machine Learning in Python. *JMLR*, 12, 2825–2830.
-        - Streamlit Documentation — [docs.streamlit.io](https://docs.streamlit.io)
+        - Streamlit Documentation: [docs.streamlit.io](https://docs.streamlit.io)
         """)
 
         st.markdown('<div class="section-title">Ringkasan Hasil</div>', unsafe_allow_html=True)
