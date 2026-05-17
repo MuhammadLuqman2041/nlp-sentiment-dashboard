@@ -3,7 +3,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
-import re, html, nltk
+import re
+import html
+import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -302,70 +304,69 @@ if page == "Batch Prediksi":
     </div>
     """, unsafe_allow_html=True)
 
-uploaded = st.file_uploader("Upload file CSV", type=["csv"])
+    uploaded = st.file_uploader("Upload file CSV", type=["csv"])
 
-def read_uploaded_csv(file):
-    for kwargs in [
-        dict(sep=None, engine="python"),
-        dict(sep=",", engine="python"),
-        dict(sep=";", engine="python"),
-    ]:
-        try:
-            file.seek(0)
-            df = pd.read_csv(file, **kwargs)
-            if df.shape[1] == 1 and "Text" not in df.columns:
+    def read_uploaded_csv(file):
+        for kwargs in [
+            dict(sep=None, engine="python"),
+            dict(sep=",", engine="python"),
+            dict(sep=";", engine="python"),
+        ]:
+            try:
+                file.seek(0)
+                df = pd.read_csv(file, **kwargs)
+                if df.shape[1] == 1 and "Text" not in df.columns:
+                    continue
+                return df
+            except Exception:
                 continue
-            return df
-        except Exception:
-            continue
-    return None
+        return None
 
-if uploaded is not None:
-    df_up = read_uploaded_csv(uploaded)
+    if uploaded is not None:
+        df_up = read_uploaded_csv(uploaded)
 
-    if df_up is None:
-        st.error("File tidak bisa dibaca sebagai CSV. Cek format delimiter dan header.")
-        st.stop()
-
-    df_up.columns = [str(c).strip() for c in df_up.columns]
-
-    if "Text" not in df_up.columns:
-        if df_up.shape[1] == 1:
-            df_up = df_up.rename(columns={df_up.columns[0]: "Text"})
+        if df_up is None:
+            st.error("File tidak bisa dibaca sebagai CSV. Cek format delimiter dan header.")
         else:
-            st.error("Kolom 'Text' tidak ditemukan. Pastikan header kolom bernama Text.")
-            st.stop()
+            df_up.columns = [str(c).strip() for c in df_up.columns]
 
-    df_up["Text"] = df_up["Text"].astype(str).fillna("").str.strip()
-    df_up = df_up[df_up["Text"] != ""]
+            if "Text" not in df_up.columns:
+                if df_up.shape[1] == 1:
+                    df_up = df_up.rename(columns={df_up.columns[0]: "Text"})
+                else:
+                    st.error("Kolom 'Text' tidak ditemukan. Pastikan header kolom bernama Text.")
+                    st.stop()
 
-    if df_up.empty:
-        st.warning("Tidak ada teks valid untuk diprediksi.")
-        st.stop()
+            df_up["Text"] = df_up["Text"].astype(str).fillna("").str.strip()
+            df_up = df_up[df_up["Text"] != ""]
 
-    st.success(f"{len(df_up):,} baris berhasil dibaca.")
-    st.dataframe(df_up.head(), use_container_width=True, hide_index=True)
+            if df_up.empty:
+                st.warning("Tidak ada teks valid untuk diprediksi.")
+            else:
+                st.success(f"{len(df_up):,} baris berhasil dibaca.")
+                st.dataframe(df_up.head(), use_container_width=True, hide_index=True)
 
-    model_choice = st.selectbox("Pilih model batch", list(models.keys()), index=2)
+                model_choice = st.selectbox("Pilih model batch", list(models.keys()), index=2)
 
-    if st.button("Prediksi Semua", use_container_width=True):
-        with st.spinner("Memproses..."):
-            df_up["clean_text"] = df_up["Text"].apply(preprocess)
-            X_batch = vecs[model_choice].transform(df_up["clean_text"])
-            df_up["Prediksi Sentimen"] = models[model_choice].predict(X_batch)
+                if st.button("Prediksi Semua", use_container_width=True):
+                    with st.spinner("Memproses..."):
+                        df_up["clean_text"] = df_up["Text"].apply(preprocess)
+                        X_batch = vecs[model_choice].transform(df_up["clean_text"])
+                        df_up["Prediksi Sentimen"] = models[model_choice].predict(X_batch)
 
-        st.success("Prediksi selesai.")
-        st.dataframe(df_up[["Text", "Prediksi Sentimen"]], use_container_width=True, hide_index=True)
+                    st.success("Prediksi selesai.")
+                    st.dataframe(df_up[["Text", "Prediksi Sentimen"]],
+                                 use_container_width=True, hide_index=True)
 
-        dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
-        dist.columns = ["Sentiment", "Count"]
-        fig = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
-                     color="Sentiment", color_discrete_map=COLORS)
-        fig.update_layout(height=300, margin=dict(t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+                    dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
+                    dist.columns = ["Sentiment", "Count"]
+                    fig = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
+                                 color="Sentiment", color_discrete_map=COLORS)
+                    fig.update_layout(height=300, margin=dict(t=10, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
 
-        csv_out = df_up[["Text", "Prediksi Sentimen"]].to_csv(index=False)
-        st.download_button("Download Hasil", csv_out, "hasil_prediksi.csv", "text/csv")
+                    csv_out = df_up[["Text", "Prediksi Sentimen"]].to_csv(index=False)
+                    st.download_button("Download Hasil", csv_out, "hasil_prediksi.csv", "text/csv")
 
 if page == "Performa Model":
     st.markdown(f"""
