@@ -475,3 +475,13 @@ if page == "Tentang Proyek":
             'F1-Score': ['0.7718', '0.7442', '0.7722']
         })
         st.dataframe(hasil, use_container_width=True, hide_index=True)
+
+    # ========== TAMBAHAN NAMA & NIM ==========
+    st.markdown("---")  # garis pemisah
+    st.markdown("### Anggota Tim")
+
+    tim_df = pd.DataFrame({
+        'Nama': ['Bukhary Kelian', 'Moch. Luqman Hakim'],
+        'NIM': ['202310370311015', '202310370311014']
+    })
+    st.dataframe(tim_df, use_container_width=True, hide_index=True)
