@@ -130,7 +130,20 @@ def setup_nltk():
     nltk.download('stopwords', quiet=True)
     nltk.download('wordnet', quiet=True)
     nltk.download('omw-1.4', quiet=True)
-    return set(stopwords.words('english')), WordNetLemmatizer()
+    
+    # Daftar negasi yang diperluas
+    negation_words = {
+        "not", "no", "nor", "never", "none", "nobody", "nothing", "nowhere", "neither", "cannot",
+        "ain't", "aren't", "can't", "couldn't", "didn't", "doesn't", "don't", "hadn't", "hasn't", 
+        "haven't", "isn't", "mightn't", "mustn't", "needn't", "shan't", "shouldn't", "wasn't", 
+        "weren't", "won't", "wouldn't", "hardly", "scarcely", "barely", "rarely"
+    }
+    
+    # Ambil stopwords NLTK dan hapus kata negasi dari daftar tersebut
+    stop_words_set = set(stopwords.words('english'))
+    stop_words_set = stop_words_set - negation_words
+    
+    return stop_words_set, WordNetLemmatizer()
 
 stop_words, lemmatizer = setup_nltk()
 
@@ -138,6 +151,11 @@ def preprocess_text(text):
     text = html.unescape(str(text))
     text = text.lower()
     text = re.sub(r"http\S+|www\S+|https\S+", " ", text)
+    
+    # Penanganan Singkatan (Contractions) sebelum menghapus tanda baca
+    text = re.sub(r"can\'t", "can not", text)
+    text = re.sub(r"n\'t", " not ", text)
+    
     text = re.sub(r"[^a-zA-Z\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     
