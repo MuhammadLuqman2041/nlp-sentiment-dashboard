@@ -97,7 +97,7 @@ def get_label_color(label):
 # =========================
 # Sidebar
 # =========================
-st.sidebar.title("Navigation")
+st.sidebar.title("📌 Navigation")
 menu = st.sidebar.radio(
     "Pilih Halaman",
     ["Dashboard", "Single Prediction", "Batch Prediction", "Model Performance", "Dataset Explorer", "About"]
@@ -112,7 +112,7 @@ selected_model = st.sidebar.selectbox(
 # Dashboard
 # =========================
 if menu == "Dashboard":
-    st.title("NLP Sentiment Analysis Dashboard")
+    st.title("🧠 NLP Sentiment Analysis Dashboard")
     st.markdown("Dashboard analisis sentimen review menggunakan beberapa skenario vectorizer dan model Decision Tree.")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -133,7 +133,7 @@ if menu == "Dashboard":
 # Single Prediction
 # =========================
 elif menu == "Single Prediction":
-    st.title("Single Text Prediction")
+    st.title("🔍 Single Text Prediction")
 
     user_input = st.text_area(
         "Masukkan teks review:",
@@ -157,7 +157,7 @@ elif menu == "Single Prediction":
 # Batch Prediction
 # =========================
 elif menu == "Batch Prediction":
-    st.title("Batch Prediction")
+    st.title("📂 Batch Prediction")
 
     uploaded_file = st.file_uploader(
         "Upload file CSV yang memiliki kolom teks",
@@ -185,7 +185,7 @@ elif menu == "Batch Prediction":
 
             csv_result = batch_df.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="Download Hasil Prediksi",
+                label="⬇️ Download Hasil Prediksi",
                 data=csv_result,
                 file_name="hasil_prediksi_sentimen.csv",
                 mime="text/csv"
@@ -195,7 +195,7 @@ elif menu == "Batch Prediction":
 # Model Performance
 # =========================
 elif menu == "Model Performance":
-    st.title("Model Performance")
+    st.title("📊 Model Performance")
 
     st.subheader("Perbandingan Accuracy")
     st.dataframe(results_df, use_container_width=True)
@@ -231,7 +231,7 @@ elif menu == "Dataset Explorer":
 # About
 # =========================
 elif menu == "About":
-    st.title("About Project")
+    st.title("ℹ️ About Project")
 
     st.markdown("""
     ### NLP Sentiment Analysis Dashboard
@@ -249,13 +249,3 @@ elif menu == "About":
     ### Catatan
     Preprocessing pada dashboard ini dibuat konsisten dengan preprocessing saat training model.
     """)
-
-    # ========== TAMBAHAN NAMA & NIM ==========
-    st.markdown("---")
-    st.markdown(f'<div class="section-title">👥 Anggota Tim</div>', unsafe_allow_html=True)
-
-    tim_df = pd.DataFrame({
-        'Nama': ['Bukhary Kelian', 'Moch. Luqman Hakim'],
-        'NIM': ['202310370311015', '202310370311014']
-    })
-    st.dataframe(tim_df, use_container_width=True, hide_index=True)
