@@ -1,0 +1,4 @@
+Model,Accuracy
+DT + BoW,0.7498
+DT + N-Gram,0.6862
+DT + TF-IDF,0.7362
