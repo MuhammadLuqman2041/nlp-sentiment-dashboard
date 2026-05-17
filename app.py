@@ -476,11 +476,12 @@ if page == "Tentang Proyek":
         })
         st.dataframe(hasil, use_container_width=True, hide_index=True)
 
+    # ========== TAMBAHAN NAMA & NIM ==========
     st.markdown("---")
     st.markdown(f'<div class="section-title">Anggota Tim</div>', unsafe_allow_html=True)
-    
-    col_n1, col_n2 = st.columns(2)
-    with col_n1:
-        st.markdown(f'<div style="background: {MAROON}10; padding: 12px; border-radius: 10px; border-left: 4px solid {MAROON};"><b>Bukhary Kelian</b><br><span style="color: {MAROON};">202310370311015</span></div>', unsafe_allow_html=True)
-    with col_n2:
-        st.markdown(f'<div style="background: {MAROON}10; padding: 12px; border-radius: 10px; border-left: 4px solid {MAROON};"><b>Moch. Luqman Hakim</b><br><span style="color: {MAROON};">202310370311014</span></div>', unsafe_allow_html=True)
+
+    tim_df = pd.DataFrame({
+        'Nama': ['Bukhary Kelian', 'Moch. Luqman Hakim'],
+        'NIM': ['202310370311015', '202310370311014']
+    })
+    st.dataframe(tim_df, use_container_width=True, hide_index=True)
