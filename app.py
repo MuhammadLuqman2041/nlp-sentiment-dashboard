@@ -1,251 +1,459 @@
 import streamlit as st
 import pandas as pd
-import joblib
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.express as px
 import re
 import html
 import nltk
+import joblib
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from sklearn.metrics import confusion_matrix, classification_report
+from wordcloud import WordCloud
+
+nltk.download('stopwords', quiet=True)
+nltk.download('wordnet', quiet=True)
+nltk.download('omw-1.4', quiet=True)
 
 st.set_page_config(
     page_title="NLP Sentiment Dashboard",
-    page_icon="🧠",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# =========================
-# NLTK setup
-# =========================
-@st.cache_resource
-def setup_nltk():
-    nltk.download('stopwords')
-    nltk.download('wordnet')
-    nltk.download('omw-1.4')
-    return set(stopwords.words('english')), WordNetLemmatizer()
+MAROON = "#800000"
+GOLD = "#c9a84c"
+GRAY = "#6b6b6b"
+COLORS = {'Positive': '#27ae60', 'Neutral': '#e67e22', 'Negative': '#c0392b'}
 
-stop_words, lemmatizer = setup_nltk()
+st.markdown(f"""
+<style>
+html, body, [class*="css"] {{ font-family: 'Segoe UI', sans-serif; }}
+section[data-testid="stSidebar"] {{ background-color: {MAROON}; }}
+section[data-testid="stSidebar"] * {{ color: white !important; }}
 
-# =========================
-# Preprocessing
-# =========================
-def preprocess_text(text):
-    text = html.unescape(str(text))
-    text = text.lower()
-    text = re.sub(r"http\\S+|www\\S+|https\\S+", " ", text)
-    text = re.sub(r"[^a-zA-Z\\s]", " ", text)
-    text = re.sub(r"\\s+", " ", text).strip()
+.page-header {{
+    background: linear-gradient(135deg, {MAROON} 0%, #4a0000 100%);
+    padding: 22px 26px;
+    border-radius: 12px;
+    color: white;
+    margin-bottom: 18px;
+}}
+.page-header h1 {{
+    margin: 0;
+    font-size: 1.7rem;
+    font-weight: 700;
+}}
+.page-header p {{
+    margin: 6px 0 0 0;
+    font-size: 0.92rem;
+    opacity: 0.88;
+}}
 
-    tokens = text.split()
-    tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]
+.metric-row {{
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+}}
+.metric-card {{
+    flex: 1;
+    background: white;
+    border-left: 5px solid {MAROON};
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}}
+.metric-card .val {{
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: {MAROON};
+    line-height: 1.1;
+}}
+.metric-card .lbl {{
+    font-size: 0.8rem;
+    color: {GRAY};
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}}
 
-    return " ".join(tokens)
+.section-title {{
+    font-size: 1rem;
+    font-weight: 700;
+    color: {MAROON};
+    border-bottom: 2px solid {MAROON};
+    padding-bottom: 5px;
+    margin: 18px 0 12px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}}
 
-# =========================
-# Load data and artifacts
-# =========================
-@st.cache_data
-def load_dataset():
-    df = pd.read_csv("reviews_sample.csv")
-    return df
+.result-positive {{
+    background: #eaf7ef;
+    border-left: 6px solid #27ae60;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 14px 0;
+}}
+.result-negative {{
+    background: #fdecea;
+    border-left: 6px solid #c0392b;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 14px 0;
+}}
+.result-neutral {{
+    background: #fef9ec;
+    border-left: 6px solid #e67e22;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 14px 0;
+}}
+.result-label {{
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}}
+.result-sub {{
+    font-size: 0.88rem;
+    color: {GRAY};
+    margin-top: 4px;
+}}
+</style>
+""", unsafe_allow_html=True)
 
-@st.cache_resource
-def load_models():
+stop_words = set(stopwords.words('english'))
+lemmatizer = WordNetLemmatizer()
+
+def preprocess(text):
+    text = html.unescape(str(text)).lower()
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r'[^a-z\s]', '', text)
+    tokens = [lemmatizer.lemmatize(w) for w in text.split() if w not in stop_words]
+    return ' '.join(tokens)
+
+@st.cache_resource(show_spinner="Memuat model...")
+def load_artifacts():
     models = {
-        "DT + BoW": {
-            "vectorizer": joblib.load("models/vec_bow.joblib"),
-            "model": joblib.load("models/dt_bow.joblib")
+        'DT + BoW': {
+            'model': joblib.load("models/dt_bow.joblib"),
+            'vectorizer': joblib.load("models/vec_bow.joblib")
         },
-        "DT + N-Gram": {
-            "vectorizer": joblib.load("models/vec_ngram.joblib"),
-            "model": joblib.load("models/dt_ngram.joblib")
+        'DT + N-Gram': {
+            'model': joblib.load("models/dt_ngram.joblib"),
+            'vectorizer': joblib.load("models/vec_ngram.joblib")
         },
-        "DT + TF-IDF": {
-            "vectorizer": joblib.load("models/vec_tfidf.joblib"),
-            "model": joblib.load("models/dt_tfidf.joblib")
+        'DT + TF-IDF': {
+            'model': joblib.load("models/dt_tfidf.joblib"),
+            'vectorizer': joblib.load("models/vec_tfidf.joblib")
         }
     }
-    return models
+    df = pd.read_csv('reviews_sample.csv')
+    if 'clean_text' not in df.columns:
+        df['clean_text'] = df['Text'].apply(preprocess)
+    
+    results_df = pd.read_csv("models/model_results.csv") if __import__("os").path.exists("models/model_results.csv") else None
+    return df, models, results_df
 
-@st.cache_data
-def load_results():
-    return pd.read_csv("models/model_results.csv")
+df, models, results_df = load_artifacts()
 
-df = load_dataset()
-models = load_models()
-results_df = load_results()
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
-# =========================
-# Helper functions
-# =========================
-def predict_sentiment(text, selected_model):
-    clean_text = preprocess_text(text)
-    vectorizer = models[selected_model]["vectorizer"]
-    model = models[selected_model]["model"]
-
-    vectorized_text = vectorizer.transform([clean_text])
-    prediction = model.predict(vectorized_text)[0]
-
-    return prediction, clean_text
-
-def get_label_color(label):
-    if label == "Positive":
-        return "green"
-    elif label == "Neutral":
-        return "orange"
-    return "red"
-
-# =========================
-# Sidebar
-# =========================
-st.sidebar.title("📌 Navigation")
-menu = st.sidebar.radio(
-    "Pilih Halaman",
-    ["Dashboard", "Single Prediction", "Batch Prediction", "Model Performance", "Dataset Explorer", "About"]
-)
+st.sidebar.markdown("## NLP Sentiment Dashboard")
+st.sidebar.markdown("Amazon Fine Food Reviews")
+st.sidebar.markdown("---")
+page = st.sidebar.radio("Navigasi", [
+    "Overview",
+    "Prediksi Sentimen",
+    "Batch Prediksi",
+    "Performa Model",
+    "Eksplorasi Data",
+    "Tentang Proyek"
+])
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Model Terbaik**")
+if results_df is not None:
+    best = results_df.loc[results_df['Accuracy'].idxmax()]
+    st.sidebar.markdown(f"{best['Model']}")
+    st.sidebar.markdown(f"Accuracy: {best['Accuracy']:.2%}")
+else:
+    st.sidebar.markdown("DT + TF-IDF")
+    st.sidebar.markdown("Accuracy: 77.42%")
+    st.sidebar.markdown("F1: 0.7722")
 
 selected_model = st.sidebar.selectbox(
     "Pilih Model",
-    ["DT + BoW", "DT + N-Gram", "DT + TF-IDF"]
+    ["DT + BoW", "DT + N-Gram", "DT + TF-IDF"],
+    index=2
 )
 
-# =========================
-# Dashboard
-# =========================
-if menu == "Dashboard":
-    st.title("🧠 NLP Sentiment Analysis Dashboard")
-    st.markdown("Dashboard analisis sentimen review menggunakan beberapa skenario vectorizer dan model Decision Tree.")
+if page == "Overview":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Sentiment Classification Dashboard</h1>
+        <p>Amazon Fine Food Reviews — NLP Project | Universitas Muhammadiyah Malang 2025</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Data", len(df))
-    col2.metric("Jumlah Model", 3)
-    col3.metric("Default Model", "DT + BoW")
-    col4.metric("Best Accuracy", f"{results_df['Accuracy'].max():.4f}")
+    st.markdown(f"""
+    <div class="metric-row">
+        <div class="metric-card"><div class="val">{len(df):,}</div><div class="lbl">Sample Data</div></div>
+        <div class="metric-card"><div class="val">{results_df['Accuracy'].max():.2%' if results_df is not None else '77.42%'}</div><div class="lbl">Best Accuracy</div></div>
+        <div class="metric-card"><div class="val">{results_df['F1-Score'].max() if results_df is not None else '0.7722'}</div><div class="lbl">Best F1-Score</div></div>
+        <div class="metric-card"><div class="val">3</div><div class="lbl">Model Experiments</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.subheader("Distribusi Sentimen Dataset")
-    if "Sentiment" in df.columns:
-        sentiment_counts = df["Sentiment"].value_counts()
-        st.bar_chart(sentiment_counts)
+    c1, c2 = st.columns([1.1, 0.9])
+    with c1:
+        st.markdown('<div class="section-title">Project Summary</div>', unsafe_allow_html=True)
+        st.write(
+            "Dashboard ini menampilkan klasifikasi sentimen ulasan produk pangan menggunakan Decision Tree "
+            "dengan tiga representasi fitur: Bag of Words, N-Gram, dan TF-IDF."
+        )
+        st.markdown('<div class="section-title">Processing Pipeline</div>', unsafe_allow_html=True)
+        pipeline = pd.DataFrame({
+            'Stage': ['Load', 'Clean', 'Preprocess', 'Vectorize', 'Train', 'Evaluate'],
+            'Main Step': ['Read sample CSV', 'Missing + duplicate removal', 'Lowercase, stopwords, lemmatize',
+                          'BoW / N-Gram / TF-IDF', 'Decision Tree', 'Accuracy, Precision, Recall, F1']
+        })
+        st.dataframe(pipeline, use_container_width=True, hide_index=True)
 
-    st.subheader("Ringkasan Performa Model")
-    st.dataframe(results_df, use_container_width=True)
+    with c2:
+        st.markdown('<div class="section-title">Label Distribution</div>', unsafe_allow_html=True)
+        counts = df['Sentiment'].value_counts().reset_index()
+        counts.columns = ['Sentiment', 'Count']
+        fig = px.pie(
+            counts, names='Sentiment', values='Count', hole=0.4,
+            color='Sentiment', color_discrete_map=COLORS
+        )
+        fig.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10),
+                          legend=dict(orientation='h', y=-0.12))
+        st.plotly_chart(fig, use_container_width=True)
 
-# =========================
-# Single Prediction
-# =========================
-elif menu == "Single Prediction":
-    st.title("🔍 Single Text Prediction")
+    st.markdown('<div class="section-title">First 10 Records</div>', unsafe_allow_html=True)
+    st.dataframe(df[['Score', 'Sentiment', 'Summary', 'Text']].head(10),
+                 use_container_width=True, hide_index=True)
 
-    user_input = st.text_area(
-        "Masukkan teks review:",
-        height=200,
-        placeholder="Contoh: This product is amazing and works really well..."
-    )
+if page == "Prediksi Sentimen":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Prediksi Sentimen</h1>
+        <p>Input satu ulasan untuk prediksi sentimen secara real-time</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if st.button("Prediksi Sentimen"):
-        if user_input.strip() == "":
-            st.warning("Masukkan teks terlebih dahulu.")
+    col1, col2 = st.columns([1.4, 1])
+    with col1:
+        user_input = st.text_area("Teks ulasan", height=140, placeholder="Contoh: This product is amazing...")
+        submit = st.button("Prediksi", use_container_width=True)
+    with col2:
+        st.markdown('<div class="section-title">Contoh Input</div>', unsafe_allow_html=True)
+        st.write("Positif: This product is absolutely amazing. Great taste and very fresh.")
+        st.write("Netral: It was okay. Nothing special but not bad either.")
+        st.write("Negatif: Terrible product. Arrived damaged and tasted awful.")
+
+    if submit:
+        if not user_input.strip():
+            st.warning("Masukkan teks ulasan terlebih dahulu.")
         else:
-            prediction, clean_text = predict_sentiment(user_input, selected_model)
-            color = get_label_color(prediction)
+            clean = preprocess(user_input)
+            vec = models[selected_model]['vectorizer']
+            model = models[selected_model]['model']
+            x = vec.transform([clean])
+            pred = model.predict(x)[0]
+            proba = model.predict_proba(x)[0]
+            classes = model.classes_
 
-            st.subheader("Hasil Prediksi")
-            st.markdown(f"**Model:** {selected_model}")
-            st.markdown(f"**Preprocessed Text:** {clean_text}")
-            st.markdown(f"**Predicted Sentiment:** :{color}[{prediction}]")
+            cls = {'Positive': 'result-positive', 'Neutral': 'result-neutral', 'Negative': 'result-negative'}[pred]
+            st.markdown(f"""
+            <div class="{cls}">
+                <p class="result-label">Sentimen: {pred}</p>
+                <p class="result-sub">Model: {selected_model} | Confidence: {max(proba):.1%}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-# =========================
-# Batch Prediction
-# =========================
-elif menu == "Batch Prediction":
-    st.title("📂 Batch Prediction")
+            prob_df = pd.DataFrame({'Class': classes, 'Confidence': proba})
+            fig = px.bar(prob_df, x='Class', y='Confidence', color='Class',
+                         color_discrete_map=COLORS, range_y=[0, 1])
+            fig.update_layout(height=300, margin=dict(t=10, b=10), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
 
-    uploaded_file = st.file_uploader(
-        "Upload file CSV yang memiliki kolom teks",
-        type=["csv"]
-    )
+            with st.expander("Hasil preprocessing"):
+                st.code(clean)
 
-    if uploaded_file is not None:
-        batch_df = pd.read_csv(uploaded_file)
-        st.write("Preview data:")
-        st.dataframe(batch_df.head(), use_container_width=True)
+            st.session_state.history.insert(0, {
+                'Model': selected_model,
+                'Input': user_input[:80] + ('...' if len(user_input) > 80 else ''),
+                'Prediction': pred,
+                'Confidence': f"{max(proba):.1%}"
+            })
 
-        text_column = st.selectbox("Pilih kolom teks", batch_df.columns)
+    if st.session_state.history:
+        st.markdown('<div class="section-title">Riwayat Prediksi</div>', unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(st.session_state.history).head(5),
+                     use_container_width=True, hide_index=True)
 
-        if st.button("Proses Batch Prediction"):
-            batch_df["clean_text"] = batch_df[text_column].astype(str).apply(preprocess_text)
+if page == "Batch Prediksi":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Batch Prediksi</h1>
+        <p>Upload CSV berisi kolom Text untuk prediksi banyak ulasan sekaligus</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-            vectorizer = models[selected_model]["vectorizer"]
-            model = models[selected_model]["model"]
+    uploaded = st.file_uploader("Upload file CSV", type=["csv"])
 
-            X_batch = vectorizer.transform(batch_df["clean_text"])
-            batch_df["Predicted_Sentiment"] = model.predict(X_batch)
+    if uploaded is not None:
+        batch_df = pd.read_csv(uploaded)
+        
+        if "Text" not in batch_df.columns:
+            if batch_df.shape[1] == 1:
+                batch_df = batch_df.rename(columns={batch_df.columns[0]: "Text"})
+            else:
+                st.error("Kolom 'Text' tidak ditemukan. Pastikan header kolom bernama Text.")
+                st.stop()
+        
+        batch_df["Text"] = batch_df["Text"].astype(str).fillna("").str.strip()
+        batch_df = batch_df[batch_df["Text"] != ""]
+        
+        if batch_df.empty:
+            st.warning("Tidak ada teks valid untuk diprediksi.")
+        else:
+            st.success(f"{len(batch_df):,} baris berhasil dibaca.")
+            st.dataframe(batch_df.head(), use_container_width=True, hide_index=True)
 
-            st.success("Batch prediction selesai.")
-            st.dataframe(batch_df.head(20), use_container_width=True)
+            if st.button("Prediksi Semua", use_container_width=True):
+                with st.spinner("Memproses..."):
+                    batch_df["clean_text"] = batch_df["Text"].apply(preprocess)
+                    X_batch = models[selected_model]['vectorizer'].transform(batch_df["clean_text"])
+                    batch_df["Prediksi Sentimen"] = models[selected_model]['model'].predict(X_batch)
 
-            csv_result = batch_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Hasil Prediksi",
-                data=csv_result,
-                file_name="hasil_prediksi_sentimen.csv",
-                mime="text/csv"
-            )
+                st.success("Prediksi selesai.")
+                st.dataframe(batch_df[["Text", "Prediksi Sentimen"]],
+                             use_container_width=True, hide_index=True)
 
-# =========================
-# Model Performance
-# =========================
-elif menu == "Model Performance":
-    st.title("📊 Model Performance")
+                dist = batch_df["Prediksi Sentimen"].value_counts().reset_index()
+                dist.columns = ["Sentiment", "Count"]
+                fig = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
+                             color="Sentiment", color_discrete_map=COLORS)
+                fig.update_layout(height=300, margin=dict(t=10, b=10))
+                st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Perbandingan Accuracy")
-    st.dataframe(results_df, use_container_width=True)
-    st.bar_chart(results_df.set_index("Model"))
+                csv_out = batch_df[["Text", "Prediksi Sentimen"]].to_csv(index=False)
+                st.download_button("Download Hasil", csv_out, "hasil_prediksi.csv", "text/csv")
 
-    best_model = results_df.loc[results_df["Accuracy"].idxmax(), "Model"]
-    best_acc = results_df["Accuracy"].max()
+if page == "Performa Model":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Performa Model</h1>
+        <p>Perbandingan DT + BoW, DT + N-Gram, dan DT + TF-IDF</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.info(f"Model terbaik berdasarkan accuracy adalah **{best_model}** dengan nilai **{best_acc:.4f}**.")
+    if results_df is not None:
+        st.dataframe(results_df, use_container_width=True, hide_index=True)
+        
+        fig = px.bar(results_df, x='Model', y=['Accuracy', 'F1-Score'], barmode='group',
+                     color_discrete_sequence=[MAROON, GOLD])
+        fig.update_layout(height=320, margin=dict(t=10, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("File model_results.csv tidak ditemukan. Menampilkan data default.")
+        hasil = pd.DataFrame({
+            'Model': ['DT + BoW', 'DT + N-Gram', 'DT + TF-IDF'],
+            'Accuracy': [0.7772, 0.7427, 0.7742],
+            'Precision': [0.7772, 0.7427, 0.7742],
+            'Recall': [0.7772, 0.7427, 0.7742],
+            'F1-Score': [0.7718, 0.7442, 0.7722]
+        })
+        st.dataframe(hasil, use_container_width=True, hide_index=True)
 
-# =========================
-# Dataset Explorer
-# =========================
-elif menu == "Dataset Explorer":
-    st.title("🗂 Dataset Explorer")
+if page == "Eksplorasi Data":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Eksplorasi Data</h1>
+        <p>Distribusi label, rating, panjang ulasan, dan word cloud</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.subheader("Preview Dataset")
-    st.dataframe(df.head(20), use_container_width=True)
+    filt = st.multiselect("Filter Sentimen", ['Positive', 'Neutral', 'Negative'],
+                          default=['Positive', 'Neutral', 'Negative'])
+    dff = df[df['Sentiment'].isin(filt)]
 
-    st.subheader("Informasi Dataset")
-    info_df = pd.DataFrame({
-        "Column": df.columns,
-        "Non-Null Count": df.notnull().sum().values,
-        "Data Type": df.dtypes.values.astype(str)
+    c1, c2 = st.columns(2)
+    with c1:
+        a = dff['Sentiment'].value_counts().reset_index()
+        a.columns = ['Sentiment', 'Count']
+        fig = px.bar(a, x='Sentiment', y='Count', color='Sentiment',
+                     color_discrete_map=COLORS, text='Count')
+        fig.update_traces(texttemplate='%{text:,}', textposition='outside')
+        fig.update_layout(height=320, margin=dict(t=10, b=10), showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        b = dff['Score'].value_counts().sort_index().reset_index()
+        b.columns = ['Score', 'Count']
+        fig = px.bar(b, x='Score', y='Count', color_discrete_sequence=[MAROON], text='Count')
+        fig.update_traces(texttemplate='%{text:,}', textposition='outside')
+        fig.update_layout(height=320, margin=dict(t=10, b=10), showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    dff2 = dff.copy()
+    dff2['Length'] = dff2['Text'].astype(str).str.split().str.len()
+    fig = px.histogram(dff2, x='Length', color='Sentiment', nbins=60,
+                       color_discrete_map=COLORS, opacity=0.75)
+    fig.update_layout(height=300, margin=dict(t=10, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+    wc1, wc2, wc3 = st.columns(3)
+    for col, sent, cmap in zip([wc1, wc2, wc3], ['Positive', 'Neutral', 'Negative'], ['Greens', 'Oranges', 'Reds']):
+        with col:
+            subset = df[df['Sentiment'] == sent]['clean_text']
+            if len(subset) > 0:
+                txt = ' '.join(subset.sample(min(800, len(subset)), random_state=42))
+                wc = WordCloud(width=450, height=280, background_color='white', colormap=cmap).generate(txt)
+                fig_wc, ax = plt.subplots(figsize=(5, 3.2))
+                ax.imshow(wc, interpolation='bilinear')
+                ax.axis('off')
+                st.pyplot(fig_wc)
+
+    n = st.slider("Jumlah baris tabel", 10, 50, 10)
+    st.dataframe(dff[['Score', 'Sentiment', 'Summary', 'Text']].head(n),
+                 use_container_width=True, hide_index=True)
+
+if page == "Tentang Proyek":
+    st.markdown(f"""
+    <div class="page-header">
+        <h1>Tentang Proyek</h1>
+        <p>Ringkasan sistem klasifikasi sentimen</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        info = pd.DataFrame({
+            'Item': ['Mata Kuliah', 'Institusi', 'Dataset', 'Algoritma', 'Fitur', 'Model Terbaik'],
+            'Detail': ['Pemrosesan Bahasa Alami (NLP)', 'Universitas Muhammadiyah Malang',
+                       'Amazon Fine Food Reviews', 'Decision Tree Classifier',
+                       'BoW, N-Gram, TF-IDF', 'DT + TF-IDF']
+        })
+        st.dataframe(info, use_container_width=True, hide_index=True)
+    with c2:
+        hasil = pd.DataFrame({
+            'Model': ['DT + BoW', 'DT + N-Gram', 'DT + TF-IDF'],
+            'Accuracy': ['77.72%', '74.27%', '77.42%'],
+            'F1-Score': ['0.7718', '0.7442', '0.7722']
+        })
+        st.dataframe(hasil, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown(f'<div class="section-title">👥 Anggota Tim</div>', unsafe_allow_html=True)
+
+    tim_df = pd.DataFrame({
+        'Nama': ['Bukhary Kelian', 'Moch. Luqman Hakim'],
+        'NIM': ['202310370311015', '202310370311014']
     })
-    st.dataframe(info_df, use_container_width=True)
-
-    if "Sentiment" in df.columns:
-        st.subheader("Distribusi Label Sentimen")
-        st.write(df["Sentiment"].value_counts())
-
-# =========================
-# About
-# =========================
-elif menu == "About":
-    st.title("ℹ️ About Project")
-
-    st.markdown("""
-    ### NLP Sentiment Analysis Dashboard
-    Dashboard ini digunakan untuk:
-    - Menampilkan eksplorasi dataset review
-    - Melakukan prediksi sentimen dari teks
-    - Melakukan batch prediction melalui file CSV
-    - Membandingkan performa beberapa skenario model NLP
-
-    ### Model yang digunakan
-    - Decision Tree + Bag of Words
-    - Decision Tree + N-Gram
-    - Decision Tree + TF-IDF
-
-    ### Catatan
-    Preprocessing pada dashboard ini dibuat konsisten dengan preprocessing saat training model.
-    """)
+    st.dataframe(tim_df, use_container_width=True, hide_index=True)
