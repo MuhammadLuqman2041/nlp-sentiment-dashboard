@@ -403,6 +403,18 @@ if page == "Batch Prediksi":
                 st.warning("Tidak ada teks valid untuk diprediksi.")
             else:
                 st.success(f"{len(df_up):,} baris berhasil dibaca.")
+                ==================================
+            st.info("""
+            ℹ️ **Informasi Fase Inference:**
+            Model ini telah dilatih (Training) sebelumnya menggunakan **40.000 data latih** di Google Colab. 
+            Oleh karena itu, seluruh data yang Anda upload di sini akan bertindak **100% sebagai Data Test / Prediksi**.
+            """)
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Data Latih (Train) di Colab", "40.000 Baris (80%)")
+            c2.metric("Data Uji (Test) Saat Ini", f"{len(df_upload)} Baris (100% dari CSV)")
+            st.markdown("---")
+======================================
                 st.dataframe(df_up.head(), use_container_width=True, hide_index=True)
 
                 model_choice = st.selectbox("Pilih model batch", list(models.keys()), index=2)
