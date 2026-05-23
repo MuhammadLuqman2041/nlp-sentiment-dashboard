@@ -11,6 +11,7 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.metrics import confusion_matrix
 from wordcloud import WordCloud
 import joblib
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
 # =========================
 # Konfigurasi Halaman & UI
@@ -355,14 +356,11 @@ if page == "Prediksi Sentimen":
         st.dataframe(pd.DataFrame(st.session_state.history).head(5),
                      use_container_width=True, hide_index=True)
 
-# =========================
-# Halaman: Batch Prediksi
-# =========================
 if page == "Batch Prediksi":
     st.markdown(f"""
     <div class="page-header">
-        <h1>Batch Prediksi</h1>
-        <p>Upload CSV berisi kolom Text untuk prediksi banyak ulasan sekaligus menggunakan model tersimpan</p>
+        <h1>Batch Prediksi & Evaluasi</h1>
+        <p>Upload CSV berisi ulasan untuk diprediksi secara massal atau dievaluasi performanya</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -377,8 +375,6 @@ if page == "Batch Prediksi":
             try:
                 file.seek(0)
                 df = pd.read_csv(file, **kwargs)
-                if df.shape[1] == 1 and "Text" not in df.columns:
-                    continue
                 return df
             except Exception:
                 continue
@@ -392,44 +388,103 @@ if page == "Batch Prediksi":
         else:
             df_up.columns = [str(c).strip() for c in df_up.columns]
             
-            if "Text" not in df_up.columns:
-                text_col_candidate = st.selectbox("Pilih kolom teks:", df_up.columns)
-                df_up = df_up.rename(columns={text_col_candidate: "Text"})
+            st.success(f"{len(df_up):,} baris (instances) berhasil dibaca.")
+            
+            # FITUR EVALUASI SESUAI PERMINTAAN DOSEN
+            eval_mode = st.checkbox("File ini memiliki label asli (Aktifkan untuk melihat Confusion Matrix & Report)")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                text_col = st.selectbox("Pilih kolom Teks Ulasan:", df_up.columns)
+            
+            with col2:
+                if eval_mode:
+                    label_col = st.selectbox("Pilih kolom Label Asli (Ground Truth):", df_up.columns)
+                else:
+                    st.info("Mode prediksi buta (tanpa label asli).")
 
-            df_up["Text"] = df_up["Text"].astype(str).fillna("").str.strip()
+            df_up["Text"] = df_up[text_col].astype(str).fillna("").str.strip()
             df_up = df_up[df_up["Text"] != ""]
 
             if df_up.empty:
                 st.warning("Tidak ada teks valid untuk diprediksi.")
             else:
-                st.success(f"{len(df_up):,} baris berhasil dibaca.")
-                st.dataframe(df_up.head(), use_container_width=True, hide_index=True)
+                model_choice = st.selectbox("Pilih model", list(models.keys()), index=2)
 
-                model_choice = st.selectbox("Pilih model batch", list(models.keys()), index=2)
-
-                if st.button("Prediksi Semua", use_container_width=True):
-                    with st.spinner("Memproses..."):
+                if st.button("Jalankan Proses", use_container_width=True):
+                    with st.spinner("Memproses teks dan memprediksi..."):
+                        # Preprocessing text
                         df_up["clean_text"] = df_up["Text"].apply(preprocess_text)
                         
                         vec = models[model_choice]["vectorizer"]
                         model_obj = models[model_choice]["model"]
                         
+                        # Prediksi
                         X_batch = vec.transform(df_up["clean_text"])
                         df_up["Prediksi Sentimen"] = model_obj.predict(X_batch)
+                        
+                    st.success("Proses selesai!")
 
-                    st.success("Prediksi selesai.")
-                    st.dataframe(df_up[["Text", "Prediksi Sentimen"]],
-                                 use_container_width=True, hide_index=True)
+                    # ==========================================
+                    # BAGIAN EVALUASI (CONFUSION MATRIX & REPORT)
+                    # ==========================================
+                    if eval_mode:
+                        st.markdown('<div class="section-title">Hasil Evaluasi Model</div>', unsafe_allow_html=True)
+                        
+                        # Menyamakan format teks (huruf besar di awal) agar tidak error saat dihitung
+                        y_true = df_up[label_col].astype(str).str.capitalize()
+                        y_pred = df_up["Prediksi Sentimen"]
+                        
+                        # 1. Total Instances & Accuracy
+                        acc = accuracy_score(y_true, y_pred)
+                        c_met1, c_met2 = st.columns(2)
+                        c_met1.metric("Total Instances", f"{len(y_true):,}")
+                        c_met2.metric("Akurasi Testing", f"{acc:.2%}")
+                        
+                        c_rep, c_cm = st.columns(2)
+                        
+                        # 2. Classification Report
+                        with c_rep:
+                            st.markdown("**Classification Report**")
+                            report_dict = classification_report(y_true, y_pred, output_dict=True)
+                            report_df = pd.DataFrame(report_dict).transpose()
+                            st.dataframe(report_df.style.format("{:.3f}"), use_container_width=True)
+                            
+                        # 3. Confusion Matrix
+                        with c_cm:
+                            st.markdown("**Confusion Matrix**")
+                            labels_cm = ['Positive', 'Neutral', 'Negative']
+                            cm_batch = confusion_matrix(y_true, y_pred, labels=labels_cm)
+                            
+                            fig_cm = px.imshow(cm_batch, text_auto=True, x=labels_cm, y=labels_cm,
+                                               color_continuous_scale=[[0, '#fff5f5'], [1, MAROON]])
+                            fig_cm.update_layout(height=320, margin=dict(t=10, b=10))
+                            st.plotly_chart(fig_cm, use_container_width=True)
+                            
+                        st.markdown("---")
 
+                    # ==========================================
+                    # BAGIAN HASIL TABEL & GRAFIK (STANDAR)
+                    # ==========================================
+                    st.markdown('<div class="section-title">Distribusi & Data Tabel</div>', unsafe_allow_html=True)
+                    
                     dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
                     dist.columns = ["Sentiment", "Count"]
-                    fig = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
+                    fig_pie = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
                                  color="Sentiment", color_discrete_map=COLORS)
-                    fig.update_layout(height=300, margin=dict(t=10, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
+                    st.plotly_chart(fig_pie, use_container_width=True)
 
-                    csv_out = df_up[["Text", "Prediksi Sentimen"]].to_csv(index=False)
-                    st.download_button("Download Hasil", csv_out, "hasil_prediksi.csv", "text/csv")
+                    # Tabel
+                    tampil_kolom = ["Text", "Prediksi Sentimen"]
+                    if eval_mode:
+                        tampil_kolom.insert(1, label_col) # Tampilkan label asli jika ada
+                        
+                    st.dataframe(df_up[tampil_kolom], use_container_width=True, hide_index=True)
+
+                    # Export
+                    csv_out = df_up[tampil_kolom].to_csv(index=False)
+                    st.download_button("Download Hasil Prediksi", csv_out, "hasil_batch_prediksi.csv", "text/csv")
 
 # =========================
 # Halaman: Performa Model
