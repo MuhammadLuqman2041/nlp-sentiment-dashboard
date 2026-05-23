@@ -356,6 +356,9 @@ if page == "Prediksi Sentimen":
         st.dataframe(pd.DataFrame(st.session_state.history).head(5),
                      use_container_width=True, hide_index=True)
 
+# =========================
+# Halaman: Batch Prediksi
+# =========================
 if page == "Batch Prediksi":
     st.markdown(f"""
     <div class="page-header">
@@ -390,8 +393,8 @@ if page == "Batch Prediksi":
             
             st.success(f"{len(df_up):,} baris (instances) berhasil dibaca.")
             
-            # FITUR EVALUASI SESUAI PERMINTAAN DOSEN
-            eval_mode = st.checkbox("File ini memiliki label asli (Aktifkan untuk melihat Confusion Matrix & Report)")
+            # FITUR EVALUASI
+            eval_mode = st.checkbox("File ini memiliki label asli (Aktifkan untuk Evaluasi Model & Analisis Error)")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -423,6 +426,10 @@ if page == "Batch Prediksi":
                         X_batch = vec.transform(df_up["clean_text"])
                         df_up["Prediksi Sentimen"] = model_obj.predict(X_batch)
                         
+                        # FITUR BARU: Ambil nilai Confidence (Probabilitas)
+                        proba = model_obj.predict_proba(X_batch)
+                        df_up["Confidence Score"] = proba.max(axis=1)
+                        
                     st.success("Proses selesai!")
 
                     # ==========================================
@@ -431,7 +438,6 @@ if page == "Batch Prediksi":
                     if eval_mode:
                         st.markdown('<div class="section-title">Hasil Evaluasi Model</div>', unsafe_allow_html=True)
                         
-                        # Menyamakan format teks (huruf besar di awal) agar tidak error saat dihitung
                         y_true = df_up[label_col].astype(str).str.capitalize()
                         y_pred = df_up["Prediksi Sentimen"]
                         
@@ -461,30 +467,57 @@ if page == "Batch Prediksi":
                             fig_cm.update_layout(height=320, margin=dict(t=10, b=10))
                             st.plotly_chart(fig_cm, use_container_width=True)
                             
+                        # 4. FITUR BARU: Tabel Analisis Kesalahan (Error Analysis)
+                        st.markdown('<div class="section-title">Analisis Kesalahan (False Positives / False Negatives)</div>', unsafe_allow_html=True)
+                        error_df = df_up[y_true != y_pred].copy()
+                        
+                        if not error_df.empty:
+                            st.warning(f"Terdapat {len(error_df)} data yang salah diprediksi oleh model. Berikut detailnya:")
+                            # Tampilkan kolom teks, label asli, tebakan, dan confidence
+                            st.dataframe(error_df[[text_col, label_col, "Prediksi Sentimen", "Confidence Score"]], 
+                                         use_container_width=True, hide_index=True)
+                        else:
+                            st.success("Luar Biasa! Model berhasil menebak semua data dengan akurat tanpa kesalahan.")
                         st.markdown("---")
 
                     # ==========================================
-                    # BAGIAN HASIL TABEL & GRAFIK (STANDAR)
+                    # BAGIAN GRAFIK & DATA TABEL (STANDAR)
                     # ==========================================
-                    st.markdown('<div class="section-title">Distribusi & Data Tabel</div>', unsafe_allow_html=True)
+                    col_pie, col_hist = st.columns(2)
                     
-                    dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
-                    dist.columns = ["Sentiment", "Count"]
-                    fig_pie = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
-                                 color="Sentiment", color_discrete_map=COLORS)
-                    fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    with col_pie:
+                        st.markdown('<div class="section-title">Distribusi Sentimen</div>', unsafe_allow_html=True)
+                        dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
+                        dist.columns = ["Sentiment", "Count"]
+                        fig_pie = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
+                                     color="Sentiment", color_discrete_map=COLORS)
+                        fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                    with col_hist:
+                        # FITUR BARU: Grafik Distribusi Confidence Score
+                        st.markdown('<div class="section-title">Keyakinan Model (Confidence)</div>', unsafe_allow_html=True)
+                        fig_hist = px.histogram(df_up, x="Confidence Score", color="Prediksi Sentimen", nbins=20,
+                                                color_discrete_map=COLORS, barmode="overlay", opacity=0.75)
+                        fig_hist.update_layout(height=300, margin=dict(t=10, b=10), xaxis_title="Confidence Score (0 - 1.0)")
+                        st.plotly_chart(fig_hist, use_container_width=True)
 
-                    # Tabel
-                    tampil_kolom = ["Text", "Prediksi Sentimen"]
+                    # Tabel Seluruh Hasil
+                    st.markdown('<div class="section-title">Tabel Lengkap Hasil Prediksi</div>', unsafe_allow_html=True)
+                    
+                    # Format nilai Confidence agar tampil sebagai persentase di tabel
+                    df_tampil = df_up.copy()
+                    df_tampil["Confidence Score"] = df_tampil["Confidence Score"].apply(lambda x: f"{x:.2%}")
+                    
+                    tampil_kolom = ["Text", "Prediksi Sentimen", "Confidence Score"]
                     if eval_mode:
                         tampil_kolom.insert(1, label_col) # Tampilkan label asli jika ada
                         
-                    st.dataframe(df_up[tampil_kolom], use_container_width=True, hide_index=True)
+                    st.dataframe(df_tampil[tampil_kolom], use_container_width=True, hide_index=True)
 
                     # Export
-                    csv_out = df_up[tampil_kolom].to_csv(index=False)
-                    st.download_button("Download Hasil Prediksi", csv_out, "hasil_batch_prediksi.csv", "text/csv")
+                    csv_out = df_tampil[tampil_kolom].to_csv(index=False)
+                    st.download_button("Download Hasil Lengkap", csv_out, "hasil_batch_prediksi_lengkap.csv", "text/csv")
 
 # =========================
 # Halaman: Performa Model
