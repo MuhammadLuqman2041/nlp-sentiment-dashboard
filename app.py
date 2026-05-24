@@ -388,136 +388,164 @@ if page == "Batch Prediksi":
 
         if df_up is None:
             st.error("File tidak bisa dibaca sebagai CSV. Cek format delimiter dan header.")
-        elif len(df_up.columns) < 2:
-            st.error("Dataset tidak valid! Pastikan CSV memiliki minimal 2 kolom (misal: Text dan Label_Asli).")
         else:
             df_up.columns = [str(c).strip() for c in df_up.columns]
             
-            st.success(f"Dataset berhasil dibaca: {len(df_up):,} baris data ditemukan.")
-            
-            # Sistem langsung meminta 2 kolom wajib
-            st.markdown('<div class="section-title">Pemetaan Kolom Dataset</div>', unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                text_col = st.selectbox("Pilih kolom untuk Teks Ulasan:", df_up.columns, index=0)
-            with col2:
-                # Coba otomatis memilih kolom kedua jika ada
-                idx_label = 1 if len(df_up.columns) > 1 else 0
-                label_col = st.selectbox("Pilih kolom untuk Label Asli:", df_up.columns, index=idx_label)
+            # ==========================================
+            # FITUR AUTO-CONVERT SCORE KE SENTIMENT
+            # (Khusus jika user upload file Reviews.csv Kaggle)
+            # ==========================================
+            if "Score" in df_up.columns and "Label_Asli" not in df_up.columns:
+                def ubah_score(score):
+                    try:
+                        s = int(score)
+                        if s >= 4: return 'Positive'
+                        elif s == 3: return 'Neutral'
+                        else: return 'Negative'
+                    except:
+                        return 'Neutral' # Jaga-jaga kalau ada data error
+                        
+                df_up["Label_Asli"] = df_up["Score"].apply(ubah_score)
+                st.info("💡 Sistem mendeteksi kolom 'Score' dan telah mengonversinya secara otomatis menjadi label: Positive, Neutral, Negative.")
+            # ==========================================
 
-            df_up["Text"] = df_up[text_col].astype(str).fillna("").str.strip()
-            df_up = df_up[df_up["Text"] != ""]
-
-            if df_up.empty:
-                st.warning("Tidak ada teks valid untuk diprediksi.")
+            if len(df_up.columns) < 2:
+                st.error("Dataset tidak valid! Pastikan CSV memiliki minimal 2 kolom (misal: Text dan Label_Asli).")
             else:
-                model_choice = st.selectbox("Pilih model untuk evaluasi", list(models.keys()), index=2)
-
-                if st.button("Jalankan Evaluasi Massal", use_container_width=True):
-                    with st.spinner("Model sedang membaca, memprediksi, dan mengevaluasi data..."):
-                        # Preprocessing text
-                        df_up["clean_text"] = df_up["Text"].apply(preprocess_text)
-                        
-                        vec = models[model_choice]["vectorizer"]
-                        model_obj = models[model_choice]["model"]
-                        
-                        # Prediksi
-                        X_batch = vec.transform(df_up["clean_text"])
-                        df_up["Prediksi Sentimen"] = model_obj.predict(X_batch)
-                        
-                        # Ambil nilai Confidence (Probabilitas)
-                        proba = model_obj.predict_proba(X_batch)
-                        df_up["Confidence Score"] = proba.max(axis=1)
-                        
-                    st.success("Evaluasi Selesai!")
-
-                    # ==========================================
-                    # BAGIAN EVALUASI (CONFUSION MATRIX & REPORT)
-                    # ==========================================
-                    st.markdown('<div class="section-title">1. Ringkasan Performa Model</div>', unsafe_allow_html=True)
+                st.success(f"Dataset berhasil dibaca: {len(df_up):,} baris data ditemukan.")
+                
+                # Sistem pemetaan kolom dataset
+                st.markdown('<div class="section-title">Pemetaan Kolom Dataset</div>', unsafe_allow_html=True)
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Mencari default index untuk kolom text (jika ada yang namanya 'Text')
+                    idx_text = df_up.columns.tolist().index('Text') if 'Text' in df_up.columns else 0
+                    text_col = st.selectbox("Pilih kolom untuk Teks Ulasan:", df_up.columns, index=idx_text)
                     
-                    y_true = df_up[label_col].astype(str).str.capitalize()
-                    y_pred = df_up["Prediksi Sentimen"]
-                    
-                    # Total Instances & Accuracy
-                    acc = accuracy_score(y_true, y_pred)
-                    c_met1, c_met2 = st.columns(2)
-                    c_met1.metric("Total Instances (Data Diuji)", f"{len(y_true):,}")
-                    c_met2.metric("Akurasi Model", f"{acc:.2%}")
-                    
-                    c_rep, c_cm = st.columns(2)
-                    
-                    # Classification Report
-                    with c_rep:
-                        st.markdown("**Classification Report**")
-                        report_dict = classification_report(y_true, y_pred, output_dict=True)
-                        report_df = pd.DataFrame(report_dict).transpose()
-                        st.dataframe(report_df.style.format("{:.3f}"), use_container_width=True)
-                        
-                    # Confusion Matrix
-                    with c_cm:
-                        st.markdown("**Confusion Matrix**")
-                        labels_cm = ['Positive', 'Neutral', 'Negative']
-                        cm_batch = confusion_matrix(y_true, y_pred, labels=labels_cm)
-                        
-                        fig_cm = px.imshow(cm_batch, text_auto=True, x=labels_cm, y=labels_cm,
-                                           color_continuous_scale=[[0, '#fff5f5'], [1, MAROON]])
-                        fig_cm.update_layout(height=320, margin=dict(t=10, b=10))
-                        st.plotly_chart(fig_cm, use_container_width=True)
-                        
-                    # ==========================================
-                    # BAGIAN ANALISIS KESALAHAN (ERROR ANALYSIS)
-                    # ==========================================
-                    st.markdown('<div class="section-title">2. Analisis Kesalahan (False Positives / False Negatives)</div>', unsafe_allow_html=True)
-                    error_df = df_up[y_true != y_pred].copy()
-                    
-                    if not error_df.empty:
-                        st.warning(f"Ditemukan {len(error_df)} data yang salah ditebak oleh model. Berikut detailnya untuk dianalisis:")
-                        # Format confidence score untuk tabel error
-                        error_df["Confidence Score"] = error_df["Confidence Score"].apply(lambda x: f"{x:.2%}")
-                        st.dataframe(error_df[[text_col, label_col, "Prediksi Sentimen", "Confidence Score"]], 
-                                     use_container_width=True, hide_index=True)
+                with col2:
+                    # Mencari default index untuk kolom label (jika ada yang namanya 'Label_Asli' atau 'Sentiment')
+                    if 'Label_Asli' in df_up.columns:
+                        idx_label = df_up.columns.tolist().index('Label_Asli')
+                    elif 'Sentiment' in df_up.columns:
+                        idx_label = df_up.columns.tolist().index('Sentiment')
                     else:
-                        st.success("Luar Biasa! Model berhasil menebak semua data dengan akurat 100% tanpa kesalahan.")
+                        idx_label = 1 if len(df_up.columns) > 1 else 0
+                        
+                    label_col = st.selectbox("Pilih kolom untuk Label Asli:", df_up.columns, index=idx_label)
 
-                    # ==========================================
-                    # BAGIAN GRAFIK DISTRIBUSI & KEYAKINAN
-                    # ==========================================
-                    st.markdown('<div class="section-title">3. Visualisasi Hasil Prediksi</div>', unsafe_allow_html=True)
-                    col_pie, col_hist = st.columns(2)
-                    
-                    with col_pie:
-                        st.markdown('**Proporsi Prediksi Sentimen**')
-                        dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
-                        dist.columns = ["Sentiment", "Count"]
-                        fig_pie = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
-                                     color="Sentiment", color_discrete_map=COLORS)
-                        fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                    
-                    with col_hist:
-                        st.markdown('**Distribusi Keyakinan Model (Confidence Score)**')
-                        fig_hist = px.histogram(df_up, x="Confidence Score", color="Prediksi Sentimen", nbins=20,
-                                                color_discrete_map=COLORS, barmode="overlay", opacity=0.75)
-                        fig_hist.update_layout(height=300, margin=dict(t=10, b=10), xaxis_title="Confidence Score (0 - 1.0)")
-                        st.plotly_chart(fig_hist, use_container_width=True)
+                # Bersihkan teks kosong
+                df_up["Text_Cleaned"] = df_up[text_col].astype(str).fillna("").str.strip()
+                df_up = df_up[df_up["Text_Cleaned"] != ""]
 
-                    # ==========================================
-                    # TABEL KESELURUHAN & DOWNLOAD
-                    # ==========================================
-                    st.markdown('<div class="section-title">4. Tabel Data Lengkap</div>', unsafe_allow_html=True)
-                    
-                    df_tampil = df_up.copy()
-                    # Menghindari dobel format jika dataframe utama diformat ulang
-                    if df_tampil["Confidence Score"].dtype == float:
-                        df_tampil["Confidence Score"] = df_tampil["Confidence Score"].apply(lambda x: f"{x:.2%}")
-                    
-                    tampil_kolom = [text_col, label_col, "Prediksi Sentimen", "Confidence Score"]
-                    st.dataframe(df_tampil[tampil_kolom], use_container_width=True, hide_index=True)
+                if df_up.empty:
+                    st.warning("Tidak ada teks valid untuk diprediksi.")
+                else:
+                    model_choice = st.selectbox("Pilih model untuk evaluasi", list(models.keys()), index=2)
 
-                    csv_out = df_tampil[tampil_kolom].to_csv(index=False)
-                    st.download_button("Download Hasil Lengkap", csv_out, "hasil_batch_evaluasi.csv", "text/csv")
+                    if st.button("Jalankan Evaluasi Massal", use_container_width=True):
+                        with st.spinner("Model sedang membaca, memprediksi, dan mengevaluasi data..."):
+                            # Preprocessing text
+                            df_up["clean_text_processed"] = df_up["Text_Cleaned"].apply(preprocess_text)
+                            
+                            vec = models[model_choice]["vectorizer"]
+                            model_obj = models[model_choice]["model"]
+                            
+                            # Prediksi
+                            X_batch = vec.transform(df_up["clean_text_processed"])
+                            df_up["Prediksi Sentimen"] = model_obj.predict(X_batch)
+                            
+                            # Ambil nilai Confidence (Probabilitas)
+                            proba = model_obj.predict_proba(X_batch)
+                            df_up["Confidence Score"] = proba.max(axis=1)
+                            
+                        st.success("Evaluasi Selesai!")
 
+                        # ==========================================
+                        # 1. BAGIAN EVALUASI (CONFUSION MATRIX & REPORT)
+                        # ==========================================
+                        st.markdown('<div class="section-title">1. Ringkasan Performa Model</div>', unsafe_allow_html=True)
+                        
+                        y_true = df_up[label_col].astype(str).str.capitalize()
+                        y_pred = df_up["Prediksi Sentimen"]
+                        
+                        # Total Instances & Accuracy
+                        acc = accuracy_score(y_true, y_pred)
+                        c_met1, c_met2 = st.columns(2)
+                        c_met1.metric("Total Instances (Data Diuji)", f"{len(y_true):,}")
+                        c_met2.metric("Akurasi Model", f"{acc:.2%}")
+                        
+                        c_rep, c_cm = st.columns(2)
+                        
+                        # Classification Report
+                        with c_rep:
+                            st.markdown("**Classification Report**")
+                            report_dict = classification_report(y_true, y_pred, output_dict=True)
+                            report_df = pd.DataFrame(report_dict).transpose()
+                            st.dataframe(report_df.style.format("{:.3f}"), use_container_width=True)
+                            
+                        # Confusion Matrix
+                        with c_cm:
+                            st.markdown("**Confusion Matrix**")
+                            labels_cm = ['Positive', 'Neutral', 'Negative']
+                            cm_batch = confusion_matrix(y_true, y_pred, labels=labels_cm)
+                            
+                            fig_cm = px.imshow(cm_batch, text_auto=True, x=labels_cm, y=labels_cm,
+                                               color_continuous_scale=[[0, '#fff5f5'], [1, MAROON]])
+                            fig_cm.update_layout(height=320, margin=dict(t=10, b=10))
+                            st.plotly_chart(fig_cm, use_container_width=True)
+                            
+                        # ==========================================
+                        # 2. BAGIAN ANALISIS KESALAHAN (ERROR ANALYSIS)
+                        # ==========================================
+                        st.markdown('<div class="section-title">2. Analisis Kesalahan (Salah Tebak)</div>', unsafe_allow_html=True)
+                        error_df = df_up[y_true != y_pred].copy()
+                        
+                        if not error_df.empty:
+                            st.warning(f"Ditemukan {len(error_df)} data yang salah ditebak oleh model. Berikut detailnya:")
+                            error_df["Confidence Score"] = error_df["Confidence Score"].apply(lambda x: f"{x:.2%}")
+                            # Tampilkan kolom-kolom penting saja
+                            st.dataframe(error_df[[text_col, label_col, "Prediksi Sentimen", "Confidence Score"]], 
+                                         use_container_width=True, hide_index=True)
+                        else:
+                            st.success("Luar Biasa! Model berhasil menebak semua data dengan akurat 100% tanpa kesalahan.")
+
+                        # ==========================================
+                        # 3. BAGIAN GRAFIK DISTRIBUSI & KEYAKINAN
+                        # ==========================================
+                        st.markdown('<div class="section-title">3. Visualisasi Hasil Prediksi</div>', unsafe_allow_html=True)
+                        col_pie, col_hist = st.columns(2)
+                        
+                        with col_pie:
+                            st.markdown('**Proporsi Prediksi Sentimen**')
+                            dist = df_up["Prediksi Sentimen"].value_counts().reset_index()
+                            dist.columns = ["Sentiment", "Count"]
+                            fig_pie = px.pie(dist, names="Sentiment", values="Count", hole=0.4,
+                                         color="Sentiment", color_discrete_map=COLORS)
+                            fig_pie.update_layout(height=300, margin=dict(t=10, b=10))
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                        with col_hist:
+                            st.markdown('**Distribusi Keyakinan Model (Confidence Score)**')
+                            fig_hist = px.histogram(df_up, x="Confidence Score", color="Prediksi Sentimen", nbins=20,
+                                                    color_discrete_map=COLORS, barmode="overlay", opacity=0.75)
+                            fig_hist.update_layout(height=300, margin=dict(t=10, b=10), xaxis_title="Confidence Score (0 - 1.0)")
+                            st.plotly_chart(fig_hist, use_container_width=True)
+
+                        # ==========================================
+                        # 4. TABEL KESELURUHAN & DOWNLOAD
+                        # ==========================================
+                        st.markdown('<div class="section-title">4. Tabel Data Lengkap</div>', unsafe_allow_html=True)
+                        
+                        df_tampil = df_up.copy()
+                        if df_tampil["Confidence Score"].dtype == float:
+                            df_tampil["Confidence Score"] = df_tampil["Confidence Score"].apply(lambda x: f"{x:.2%}")
+                        
+                        tampil_kolom = [text_col, label_col, "Prediksi Sentimen", "Confidence Score"]
+                        st.dataframe(df_tampil[tampil_kolom], use_container_width=True, hide_index=True)
+
+                        csv_out = df_tampil[tampil_kolom].to_csv(index=False)
+                        st.download_button("Download Hasil Lengkap", csv_out, "hasil_batch_evaluasi.csv", "text/csv")
 # =========================
 # Halaman: Performa Model
 # =========================
