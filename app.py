@@ -293,66 +293,85 @@ if page == "Overview":
                  use_container_width=True, hide_index=True)
 
 # =========================
-# Halaman: Prediksi Sentimen
+# Halaman: Prediksi Sentimen (Single)
 # =========================
 if page == "Prediksi Sentimen":
     st.markdown(f"""
     <div class="page-header">
-        <h1>Prediksi Sentimen</h1>
-        <p>Input satu ulasan untuk prediksi sentimen secara real-time</p>
+        <h1>Prediksi Sentimen Real-time</h1>
+        <p>Ketikkan satu ulasan produk untuk melihat tebakan sentimen dan tingkat keyakinan model secara instan.</p>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2 = st.columns([1.4, 1])
     with col1:
-        model_choice = st.selectbox("Pilih model", list(models.keys()), index=2)
-        user_input = st.text_area("Teks ulasan", height=140, placeholder="Contoh: This product is amazing...")
-        submit = st.button("Prediksi", use_container_width=True)
+        model_choice = st.selectbox("Pilih Model Pendekatan:", list(models.keys()), index=2)
+        user_input = st.text_area("Masukkan Teks Ulasan:", height=140, placeholder="Contoh: The product arrived on time, but the packaging was completely destroyed and it tasted awful.")
+        submit = st.button("Analisis Sentimen", use_container_width=True)
+        
     with col2:
-        st.markdown('<div class="section-title">Contoh Input</div>', unsafe_allow_html=True)
-        st.write("Positif: This product is absolutely amazing. Great taste and very fresh.")
-        st.write("Netral: It was okay. Nothing special but not bad either.")
-        st.write("Negatif: Terrible product. Arrived damaged and tasted awful.")
+        st.markdown('<div class="section-title">Contoh Kalimat Pengujian</div>', unsafe_allow_html=True)
+        st.info("**Positif:** This product is absolutely amazing. Great taste and very fresh.")
+        st.warning("**Netral:** It was okay. Nothing special but not bad either.")
+        st.error("**Negatif:** Terrible product. Arrived damaged and tasted awful.")
 
     if submit:
         if not user_input.strip():
-            st.warning("Masukkan teks ulasan terlebih dahulu.")
+            st.warning("Masukkan teks ulasan terlebih dahulu sebelum menekan tombol Analisis.")
         else:
-            clean = preprocess_text(user_input)
-            vec = models[model_choice]["vectorizer"]
-            model = models[model_choice]["model"]
-            
-            x = vec.transform([clean])
-            pred = model.predict(x)[0]
-            proba = model.predict_proba(x)[0]
-            classes = model.classes_
+            with st.spinner("Menganalisis teks..."):
+                # 1. Preprocessing
+                clean = preprocess_text(user_input)
+                
+                # 2. Ambil Model
+                vec = models[model_choice]["vectorizer"]
+                model = models[model_choice]["model"]
+                
+                # 3. Prediksi & Probabilitas
+                x = vec.transform([clean])
+                pred = model.predict(x)[0]
+                proba = model.predict_proba(x)[0]
+                classes = model.classes_
 
+            # 4. Tampilkan Hasil Utama
             cls = {'Positive': 'result-positive', 'Neutral': 'result-neutral', 'Negative': 'result-negative'}[pred]
             st.markdown(f"""
             <div class="{cls}">
-                <p class="result-label">Sentimen: {pred}</p>
-                <p class="result-sub">Model: {model_choice} | Confidence: {max(proba):.1%}</p>
+                <p class="result-label">Hasil Sentimen: {pred}</p>
+                <p class="result-sub">Model: {model_choice} | Confidence Score: {max(proba):.2%}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            prob_df = pd.DataFrame({'Class': classes, 'Confidence': proba})
-            fig = px.bar(prob_df, x='Class', y='Confidence', color='Class',
-                         color_discrete_map=COLORS, range_y=[0, 1])
-            fig.update_layout(height=300, margin=dict(t=10, b=10), showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("---")
+            
+            # 5. Detail Interpretasi Model
+            c_chart, c_text = st.columns(2)
+            
+            with c_chart:
+                st.markdown("**Distribusi Keyakinan (Probabilitas)**")
+                prob_df = pd.DataFrame({'Sentimen': classes, 'Probabilitas': proba})
+                fig = px.bar(prob_df, x='Sentimen', y='Probabilitas', color='Sentimen',
+                             color_discrete_map=COLORS, range_y=[0, 1], text_auto='.1%')
+                fig.update_layout(height=280, margin=dict(t=10, b=10), showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+                
+            with c_text:
+                st.markdown("**Transparansi Mesin (Preprocessing)**")
+                st.write("Teks asli yang Anda masukkan telah dibersihkan menjadi seperti di bawah ini sebelum diproses oleh model:")
+                st.code(clean, language="text")
+                st.caption(f"Jumlah token (kata kunci): {len(clean.split())} kata")
 
-            with st.expander("Hasil preprocessing"):
-                st.code(clean)
-
+            # 6. Simpan ke Riwayat
             st.session_state.history.insert(0, {
                 'Model': model_choice,
-                'Input': user_input[:80] + ('...' if len(user_input) > 80 else ''),
-                'Prediction': pred,
-                'Confidence': f"{max(proba):.1%}"
+                'Teks Asli': user_input[:80] + ('...' if len(user_input) > 80 else ''),
+                'Prediksi': pred,
+                'Confidence': f"{max(proba):.2%}"
             })
 
+    # Tampilkan Riwayat
     if st.session_state.history:
-        st.markdown('<div class="section-title">Riwayat Prediksi</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Riwayat Pengujian Sesi Ini</div>', unsafe_allow_html=True)
         st.dataframe(pd.DataFrame(st.session_state.history).head(5),
                      use_container_width=True, hide_index=True)
 
