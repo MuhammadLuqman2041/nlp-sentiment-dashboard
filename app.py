@@ -498,7 +498,7 @@ if page == "Batch Prediksi":
                         # ==========================================
                         # 2. BAGIAN ANALISIS KESALAHAN (ERROR ANALYSIS)
                         # ==========================================
-                        st.markdown('<div class="section-title">2. Analisis Kesalahan (Salah Tebak)</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="section-title">2. Analisis Kesalahan (Error Analysis)</div>', unsafe_allow_html=True)
                         error_df = df_up[y_true != y_pred].copy()
                         
                         if not error_df.empty:
